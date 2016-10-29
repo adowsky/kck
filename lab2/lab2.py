@@ -47,32 +47,30 @@ def hsv2rgb(h, s, v):
         g = 0
         b = 0
     elif h <= 60:
-        b = 1 - s
+        b = (1 - s) * v
         r = v
-        g = h/60 * v
+        g = (1 - s) * v + h/60 * v
     elif h <= 120:
-        b = 1 - s
+        b = (1 - s) * v
         g = v
-        r = (1 - (h - 60)/60) * v
+        r = ((120 - h)/60) * v
     elif h <= 180:
-        r = 1 - s
+        r = (1 - s) * v
         g = v
-        b = (h - 120)/60 * v
-    elif h <= 240:
-        r = 1 - s
-        b = v
-        g = (1 - (h - 180))/60 * v
-    elif h <= 300:
-        g = 1 - s
-        b = v
-        r = (h - 240)/60 * v
-    else:
-        g = 1 - s
-        r = v
-        b = (1 - (h - 300))/60 * v
+        b = (1 - s) * v + (h - 120)/60 * v
 
-    if r >= 1 and b > 0:
-        print(r)
+    elif h <= 240:
+        r = (1 - s) * v
+        b = v
+        g = (1. - s) * v + ((240 - h)/60) * v
+    elif h <= 300:
+        g = (1 - s) * v
+        b = v
+        r = (1 - s) * v + (h - 240)/60 * v
+    else:
+        g = (1 - s) * v
+        r = v
+        b = (1 - s) * v + ((360 - h)/60) * v
 
     return r, g, b
 
@@ -118,7 +116,7 @@ def gradient_rgb_wb_custom(v):
 
 def gradient_hsv_bw(v):
     
-    return hsv2rgb(0, v, 1)
+    return hsv2rgb(v*360, 1, 1)
 
 
 def gradient_hsv_gbr(v):
