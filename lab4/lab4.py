@@ -7,7 +7,6 @@ def prepare_image_to_processing(img):
     return cv2.adaptiveThreshold(~cimg, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 43, -15)
 
 
-
 def extract_notes(vertical):
     verticalsize = int(vertical.shape[0] / 30)
     vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (3, verticalsize))
@@ -120,21 +119,29 @@ def find_metre_sign(contours, hierarchy, height, q):
     return left_idx if abs(left[0] - left[2] - height) < q else None
 
 
-def count_possible_notes(notes, contours):
-    max_square = 0,0
+def count_possible_notes(notes, contours, image):
+    max_square = 0, 0
     possible_notes = []
     count = 0
     boxes = []
     for idx in notes:
         square = close_contour_in_square(contours[idx])
         boxes.append(square)
-        length = square_length(square)
-        if length[0] > max_square[0] or length[1] > max_square[1]:
+        length = square_sizes(square)
+        black_in_box = 0
+
+        for y in range(square[2], square[0]):
+            for x in range(square[3], square[1]):
+                if image[y][x] > 0:
+                    black_in_box += 1
+        black_white_ratio = black_in_box / ((square[0] - square[2])*(square[1] - square[3]))
+        size_ratio = max(length[0], length[1])/min(length[0], length[1])
+        if (length[0] > max_square[0] or length[1] > max_square[1]) and size_ratio < 2:
             max_square = length
 
         if length[0] <= max_square[0]/2 or length[1] <= max_square[1]/2:
             possible_notes.append(len(boxes) - 1)
-        else:
+        elif black_white_ratio > 0.0003*len(image[0]):
             count += 1
 
     for idx in possible_notes:
@@ -153,11 +160,15 @@ def count_possible_notes(notes, contours):
     return count
 
 
-def square_length(square):
+def square_sizes(square):
     return square[1] - square[3], square[0] - square[2]
 
 
-img = cv2.imread('donuts.jpg', cv2.IMREAD_COLOR)
+img = cv2.imread('notes.jpg', cv2.IMREAD_COLOR) # wyliczył 41 powinien 31
+#img = cv2.imread('donuts.jpg', cv2.IMREAD_COLOR) # dobrze 7
+#img = cv2.imread('jingle.jpg', cv2.IMREAD_COLOR) # dobrze 12
+#img = cv2.imread('odetojoy.jpg', cv2.IMREAD_COLOR) #dobrze 19
+
 bw = prepare_image_to_processing(img)
 horizontal = copy.deepcopy(bw)
 bw = cv2.erode(bw, cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3)))
@@ -174,14 +185,14 @@ no_key_img = cv2.adaptiveThreshold(copy.deepcopy(vertical), 255, cv2.ADAPTIVE_TH
 
 remove_metre_sign(no_key_img, vertical, count_staff_height(horizontal), int(len(img)/10))
 
-cv2.imshow("vertical", vertical)
-
 edges = cv2.adaptiveThreshold(vertical, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 3, -4)
 im2, contours, hierarchy = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)
 cv2.imshow("edges", edges)
+cv2.imshow("vertical", vertical)
+cv2.imshow("ORIGINAL", img)
 
 possible_notes = find_deepest_contours(hierarchy)
-count = count_possible_notes(possible_notes, contours)
+count = count_possible_notes(possible_notes, contours, vertical)
 print("Found: " + str(count) + " musical objects")
 
 cv2.waitKey(0)
