@@ -11,6 +11,39 @@ import numpy as np
 from matplotlib import colors
 
 
+def left_neighbour_shadow(line):
+    result = [hsv2rgb(120 - line[0]*120, 0.5, 0.5)]
+    for i in range(len(line[1:])):
+        value = 0.6 + (line[i + 1] - line[i]) / 0.6
+        result.append(hsv2rgb(120 - line[i+1]*120, 0.7, value))
+    return result
+
+
+def plot_map(filename):
+    rc('legend', fontsize=10)
+    w = 0
+    h = 0
+    pt_per_inch = 0
+    data = []
+
+    with open(filename) as file:
+        lines = file.readlines()
+        initial_data = lines[0].split(" ")
+        h = int(initial_data[0])
+        w = int(initial_data[1])
+        pt_per_inch = int(initial_data[2])
+        print("processing lines of file...")
+        for line in lines[1:]:
+            splitted = line.strip().split(" ")
+            for x in splitted:
+                if float(x)/160 > 1:
+                    print(x)
+            data.append(left_neighbour_shadow([float(x)/160 for x in splitted]))
+        print("processing file: [DONE]")
+    im = plt.imshow(data, aspect='auto')
+    plt.savefig('map.pdf')
+
+
 def plot_color_gradients(gradients, names):
     # For pretty latex fonts (commented out, because it does not work on some machines)
     # rc('text', usetex=True)
@@ -139,7 +172,8 @@ if __name__ == '__main__':
         return g.__name__.replace('gradient_', '').replace('_', '-').upper()
 
 
-    gradients = (gradient_rgb_bw, gradient_rgb_gbr, gradient_rgb_gbr_full, gradient_rgb_wb_custom,
-                 gradient_hsv_bw, gradient_hsv_gbr, gradient_hsv_unknown, gradient_hsv_custom)
+    #gradients = (gradient_rgb_bw, gradient_rgb_gbr, gradient_rgb_gbr_full, gradient_rgb_wb_custom,
+     #        gradient_hsv_bw, gradient_hsv_gbr, gradient_hsv_unknown, gradient_hsv_custom)
 
-    plot_color_gradients(gradients, [toname(g) for g in gradients])
+   # plot_color_gradients(gradients, [toname(g) for g in gradients])
+    plot_map("big.dem")
