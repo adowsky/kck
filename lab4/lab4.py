@@ -4,9 +4,8 @@ import copy
 
 def prepare_image_to_processing(img):
     cimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    bw = cv2.adaptiveThreshold(~cimg, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 43, -15)
-    bw = cv2.erode(bw, cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3)))
-    return cv2.dilate(bw, cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3)))
+    return cv2.adaptiveThreshold(~cimg, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 43, -15)
+
 
 
 def extract_notes(vertical):
@@ -14,7 +13,7 @@ def extract_notes(vertical):
     vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (3, verticalsize))
     vertical = cv2.erode(vertical, vertical_structure)
     vertical = cv2.dilate(vertical, vertical_structure)
-    vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(verticalsize / 2)))
+    vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(verticalsize / 2) if int(verticalsize / 2) > 0 else 1))
     vertical = cv2.erode(vertical, vertical_structure)
     return cv2.dilate(vertical, vertical_structure)
 
@@ -89,7 +88,7 @@ def count_staff_height(source):
     y = 0
     while top is None:
         for x in source[y]:
-            if source[y][x] > 0:
+            if x > 0:
                 top = y
         y += 1
         if y > max_size:
@@ -98,13 +97,13 @@ def count_staff_height(source):
     bottom = None
     y = 0
     while bottom is None:
-        for x in source[y]:
+        for x in range(0, len(source[y])):
             if source[max_size - y][x] > 0:
-                bottom = max_size - y
+                bottom = max_size - y + 2
         y += 1
         if y > max_size:
             bottom = -1
-    return bottom - top
+    return abs(bottom - top)
 
 
 def remove_metre_sign(source, img, height, q):
@@ -147,7 +146,7 @@ def count_possible_notes(notes, contours):
             yu = boxes[possible_companion][0] if boxes[possible_companion][0] > boxes[idx][0] else boxes[idx][0]
             yd = boxes[possible_companion][2] if boxes[possible_companion][2] < boxes[idx][2] else boxes[idx][2]
 
-            if xr - xl <= max_square[0] and yu -yd <= max_square[1]:
+            if xr - xl <= max_square[0] and yu - yd <= max_square[1]:
                 count += 1
                 possible_notes.remove(idx)
                 possible_notes.remove(possible_companion)
@@ -158,16 +157,16 @@ def square_length(square):
     return square[1] - square[3], square[0] - square[2]
 
 
-img = cv2.imread('odetojoy.jpg', cv2.IMREAD_COLOR)
+img = cv2.imread('donuts.jpg', cv2.IMREAD_COLOR)
 bw = prepare_image_to_processing(img)
 horizontal = copy.deepcopy(bw)
+bw = cv2.erode(bw, cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3)))
+bw = cv2.dilate(bw, cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3)))
 vertical = copy.deepcopy(bw)
 
 horizontal = extract_staff(horizontal)
 vertical = extract_notes(vertical)
 vertical = cv2.bitwise_not(vertical)
-cv2.imshow("vertical1", bw)
-cv2.imshow("horizontal", horizontal)
 
 key = remove_key_sign(bw, vertical)
 no_key_img = cv2.adaptiveThreshold(copy.deepcopy(vertical), 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 3, -4)
