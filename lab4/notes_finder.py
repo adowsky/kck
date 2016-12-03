@@ -6,6 +6,7 @@ import numpy
 
 class NotesFinder:
     def __init__(self, image):
+        self.original = copy.deepcopy(image)
         self.image = image
         self.vertical = []
         self.horizontal = []
@@ -43,12 +44,11 @@ class NotesFinder:
         im2, contours, hierarchy = cv2.findContours(copy.deepcopy(self.image), cv2.RETR_TREE,
                                                     cv2.CHAIN_APPROX_TC89_KCOS)
         most_left, others = self._find_most_left_shape(contours, hierarchy)
-        most_left = self._close_contour_in_square(contours[most_left])
-        # if abs(most_left[0] - most_left[2] - len(self.image)) < q
-        self._remove_from_image(self.vertical, most_left, 255)
+        most_left_box = self._close_contour_in_square(contours[most_left])
+        self._remove_from_image(self.vertical, most_left_box, 255)
         for idx in others:
             self._remove_from_image(self.vertical, self._close_contour_in_square(contours[idx]), 255)
-        removal_square = len(self.vertical) - 1, most_left[1], 0, most_left[3]
+        removal_square = len(self.vertical) - 1, most_left_box[1], 0, most_left_box[3]
         self._remove_from_image(self.vertical, removal_square, 255)
         return most_left
 
@@ -160,18 +160,17 @@ class NotesFinder:
         for idx in notes:
             square = self._close_contour_in_square(contours[idx])
             length = self._square_sizes(square)
-            size_ratio = max(length[0], length[1]) / min(length[0], length[1])
-            if (length[0] > max_square[0] or length[1] > max_square[1]) and size_ratio < 2 and abs(
-                            length[1] - self.staff_gap) < q:
+            if self._is_better_box(max_square, length):
                 max_square = length
+
         for idx in notes:
             square = self._close_contour_in_square(contours[idx])
             boxes.append(square)
             ids.append(idx)
             length = self._square_sizes(square)
-
-            if abs(length[0] - max_square[0]) > math.sqrt(self.staff_gap) or abs(length[1] - max_square[1]) > math.sqrt(
-                    self.staff_gap):
+            is_vertically_different = abs(length[1] - max_square[1]) > math.sqrt(self.staff_gap)
+            is_horizontally_different = abs(length[0] - max_square[0]) > math.sqrt(self.staff_gap)
+            if is_horizontally_different or is_vertically_different:
                 possible_notes.append(len(boxes) - 1)
             else:
                 count += 1
@@ -179,30 +178,58 @@ class NotesFinder:
 
         to_remove = []
         new_boxes = []
-        for idx in possible_notes:
-            for possible_companion in possible_notes:
-                if possible_companion == idx:
-                    continue
-                xl = boxes[possible_companion][3] if boxes[possible_companion][3] < boxes[idx][3] else boxes[idx][3]
-                xr = boxes[possible_companion][1] if boxes[possible_companion][1] > boxes[idx][1] else boxes[idx][1]
-                yu = boxes[possible_companion][0] if boxes[possible_companion][0] > boxes[idx][0] else boxes[idx][0]
-                yd = boxes[possible_companion][2] if boxes[possible_companion][2] < boxes[idx][2] else boxes[idx][2]
+        possible_notes_count, boxes, notes_contours = self._verify_notes(possible_notes, boxes, max_square, contours, ids)
+        result_conturs += notes_contours
+        return count + possible_notes_count, boxes, result_conturs
 
-                if xr - xl <= max_square[0] and yu - yd <= max_square[1]:
-                    count += 1
-                    possible_notes.remove(idx)
-                    possible_notes.remove(possible_companion)
-                    to_remove.append(boxes[possible_companion])
-                    to_remove.append(boxes[idx])
-                    new_boxes.append((yu, xr, yd, xl))
-                    result_conturs.append(contours[ids[idx]])
-        for item in possible_notes:
-            to_remove.append(boxes[item])
-        for item in to_remove:
-            boxes.remove(item)
-        for box in new_boxes:
-            boxes.append(box)
-        return count, boxes, result_conturs
+    def _is_better_box(self, maximum, current):
+        size_ratio = max(current[0], current[1]) / min(current[0], current[1])
+        size_condition = (current[0] > maximum[0] or current[1] > maximum[1])
+        ratio_cond = size_ratio < 2
+        height_cond = abs(current[1] - self.staff_gap) < math.sqrt(self.staff_gap)
+        return size_condition and ratio_cond and height_cond
+
+    @staticmethod
+    def _verify_notes(possible_notes, source_boxes, max_square, contours, ids):
+        to_process = possible_notes
+        boxes = copy.deepcopy(source_boxes)
+        created_boxes = []
+        to_remove = []
+        result_contours = []
+        while len(possible_notes) > 0:
+            iteration_boxes = []
+            for idx in possible_notes:
+                for companion in possible_notes:
+                    if companion == idx:
+                        continue
+                    left = boxes[companion][3] if boxes[companion][3] < boxes[idx][3] else boxes[idx][3]
+                    right = boxes[companion][1] if boxes[companion][1] > boxes[idx][1] else boxes[idx][1]
+                    up = boxes[companion][0] if boxes[companion][0] > boxes[idx][0] else boxes[idx][0]
+                    down = boxes[companion][2] if boxes[companion][2] < boxes[idx][2] else boxes[idx][2]
+                    if right - left <= max_square[0] and up - down <= max_square[1]:
+                        possible_notes.remove(idx)
+                        possible_notes.remove(companion)
+                        iteration_boxes.append((up, right, down, left))
+                        if boxes[companion] in created_boxes:
+                            to_remove.append(boxes[companion])
+                            created_boxes.remove(boxes[companion])
+                        else:
+                            result_contours.append(contours[ids[companion]])
+                        if boxes[companion] in created_boxes:
+                            to_remove.append(boxes[idx])
+                            created_boxes.remove(boxes[idx])
+                        else:
+                            result_contours.append(contours[ids[idx]])
+            for box in iteration_boxes:
+                possible_notes.append(len(boxes))
+                boxes.append(box)
+                created_boxes.append(box)
+            if len(iteration_boxes) == 0:
+                possible_notes = []
+        for box in to_remove:
+            boxes.remove(box)
+
+        return len(created_boxes), boxes, result_contours
 
     @staticmethod
     def _square_sizes(square):
@@ -252,14 +279,21 @@ class NotesFinder:
 
     def _improve_under_line(self):
         if self.staff_gap <= 7:
-            xx = cv2.dilate(self.vertical[self.staff_top_position + int(self.staff_gap * 4.5):],
+            underline = cv2.dilate(self.vertical[self.staff_top_position + int(self.staff_gap * 4.5):],
                             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 3)))
-            for x in range(0, len(xx)):
-                self.vertical[self.staff_top_position + int(self.staff_gap * 4.5) + x] = xx[x]
+            for x in range(0, len(underline)):
+                self.vertical[self.staff_top_position + int(self.staff_gap * 4.5) + x] = underline[x]
+
+    def _improve_upper_line(self):
+        if self.staff_gap <= 7:
+            upperline = cv2.dilate(self.vertical[:self.staff_top_position - int(self.staff_gap * 0.5)],
+                            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 3)))
+            for x in range(0, len(upperline)):
+                self.vertical[x] = upperline[x]
 
     def _recognize_tones(self, boxes):
         sorted_boxes = sorted(boxes, key=lambda tup: tup[3])
-        notes = ['f2', 'e2', 'd2', 'c2', 'b', 'a', 'g', 'f', 'e', 'd', 'c']
+        #notes = ['f2', 'e2', 'd2', 'c2', 'b', 'a', 'g', 'f', 'e', 'd', 'c']
         melody = []
         if len(sorted_boxes) > 0:
             for box in sorted_boxes:
@@ -275,7 +309,8 @@ class NotesFinder:
                         found = True
                     pos += 1
                     line += int(self.staff_gap)
-            return [notes[2 * (int(x, 10) - 1)] if len(x) == 1 else notes[2 * (int(x[0], 10) - 1) + 1] for x in melody]
+            #return [notes[2 * (int(x, 10) - 1)] if len(x) == 1 else notes[2 * (int(x[0], 10) - 1) + 1] for x in melody]
+            return melody
 
     def count_notes(self, view=True):
         self._prepare_image_to_processing()
@@ -290,23 +325,23 @@ class NotesFinder:
         self._extract_notes()
 
         self._remove_key_sign()
+        if view:
+            cv2.imshow("WITHOUT KEY", self.vertical)
         no_key_img = cv2.adaptiveThreshold(copy.deepcopy(self.vertical), 255,
                                            cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 3, -4)
         self._remove_metre_sign(no_key_img, int(len(self.image) / 10))
-        if view:
-            cv2.imshow("WITHOUT METRE", self.vertical)
         self._improve_under_line()
         edges = cv2.adaptiveThreshold(self.vertical, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 3, -2)
-        if view:
-            cv2.imshow("EDGES METRE", edges)
         im2, contours, hierarchy = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)
         if view:
-            cv2.imshow("ORIGINAL", self.image)
+            cv2.imshow("ORIGINAL", self.original)
+        if view:
+            cv2.imshow("im2", im2)
 
         possible_notes = self._find_deepest_contours(hierarchy)
         count, boxes, result_contours = self._count_possible_notes(possible_notes, contours, int(len(self.image) / 10))
-        melody = self._recognize_tones(boxes)
         print(str(count) + " objects have been found.")
+        melody = self._recognize_tones(boxes)
         print(melody)
 
         conimg = cv2.drawContours(numpy.zeros(self.vertical.shape), result_contours, -1, (100, 10, 200), 1)
